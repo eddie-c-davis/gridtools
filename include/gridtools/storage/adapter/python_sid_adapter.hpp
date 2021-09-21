@@ -20,8 +20,10 @@
 #include <type_traits>
 #include <utility>
 
+#ifdef USE_CUDA
 #include <cuda.h>
 #include <cuda_runtime.h>
+#endif
 
 #include <pybind11/pybind11.h>
 
@@ -260,6 +262,7 @@ namespace gridtools {
             // data
             T *ptr = reinterpret_cast<T *>(info.ptr);
             T *device_ptr;
+#ifdef USE_CUDA
             unsigned int mem_type;
             auto ret = cuPointerGetAttribute(&mem_type, CU_POINTER_ATTRIBUTE_MEMORY_TYPE, (CUdeviceptr) ptr);
             if (ret != CUDA_SUCCESS) {
@@ -273,6 +276,7 @@ namespace gridtools {
             } else {
                 throw std::domain_error("Unknown CUDA memory type: "+ std::to_string(mem_type));
             }
+#endif
 
             // strides
             array<size_t, Dim> strides;
