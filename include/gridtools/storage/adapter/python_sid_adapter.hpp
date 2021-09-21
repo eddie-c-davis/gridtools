@@ -20,6 +20,9 @@
 #include <type_traits>
 #include <utility>
 
+#include <cuda.h>
+#include <cuda_runtime.h>
+
 #include <pybind11/pybind11.h>
 
 #include <boost/optional.hpp>
@@ -244,78 +247,39 @@ namespace gridtools {
         }
 
         template <class T, size_t Dim, class Kind = void, int UnitStrideDim = -1>
-        auto as_cuda_sid(pybind11::object const &src) {
+        auto as_cuda_sid(pybind11::buffer const &src) {
             static_assert(std::is_trivially_copyable<T>::value,
                 "as_cuda_sid should be instantiated with the trivially copyable type");
 
-            auto iface = src.attr("__cuda_array_interface__").cast<pybind11::dict>();
+            pybind11::buffer_info info = src.request();
 
             // shape
             array<size_t, Dim> shape;
-            {
-                auto py_shape = iface["shape"].cast<pybind11::tuple>();
-                if (py_shape.size() != Dim)
-                    throw std::domain_error("cuda array has incorrect number of dimensions: " +
-                                            std::to_string(py_shape.size()) + "; expected " + std::to_string(Dim));
-                std::transform(py_shape.begin(), py_shape.end(), shape.begin(), [](auto &&src) {
-                    return src.template cast<size_t>();
-                });
-            }
-
-            // typestr
-            {
-                auto obj = parse_typestr(iface["typestr"].cast<std::string>());
-                if (obj.type == typestr::bit_field)
-                    throw std::domain_error("bit fields are not supported");
-                // any other types are OK for us as soon as the sizeof is correct
-                if (obj.size != sizeof(T))
-                    throw std::domain_error("invalid item size");
-            }
+            std::copy_n(info.shape.begin(), Dim, shape.begin());
 
             // data
-            auto data = iface["data"].cast<std::tuple<std::size_t, bool>>();
-            T *ptr = reinterpret_cast<T *>(std::get<0>(data));
-            constexpr bool writable = !std::is_const<T>();
-            bool readonly = std::get<1>(data);
-            assert(!writable || !readonly);
-
-            // version
-            auto version = iface["version"].cast<int>();
+            T *ptr = reinterpret_cast<T *>(info.ptr);
+            T *device_ptr;
+            unsigned int mem_type;
+            auto ret = cuPointerGetAttribute(&mem_type, CU_POINTER_ATTRIBUTE_MEMORY_TYPE, (CUdeviceptr) ptr);
+            if (ret != CUDA_SUCCESS) {
+                throw std::domain_error("CUDA error when getting pointer attribute: " + std::to_string(ret));
+            }
+            if (mem_type == CU_MEMORYTYPE_UNIFIED || mem_type == CU_MEMORYTYPE_DEVICE) {  // GPUStorage
+                device_ptr = ptr;
+            } else if (mem_type == CU_MEMORYTYPE_HOST) {  // ExplicitlySyncGPUStorage
+                auto ptr = src.attr("data").attr("data").attr("ptr").cast<std::size_t>();
+                device_ptr = reinterpret_cast<T *>(ptr);
+            } else {
+                throw std::domain_error("Unknown CUDA memory type: "+ std::to_string(mem_type));
+            }
 
             // strides
             array<size_t, Dim> strides;
-            if (version > 1 && iface.contains("strides") && !iface["strides"].is_none()) {
-                auto py_strides = iface["strides"].cast<pybind11::tuple>();
-                if (py_strides.size() != Dim)
-                    throw std::domain_error("cuda array has incorrect number of strides: " +
-                                            std::to_string(py_strides.size()) + "; expected " + std::to_string(Dim));
-                std::transform(py_strides.begin(), py_strides.end(), strides.begin(), [](auto &&src) {
-                    auto bytes = src.template cast<size_t>();
-                    assert(bytes % sizeof(T) == 0);
-                    return bytes / sizeof(T);
-                });
-            } else {
-                size_t s = 1;
-                for (int i = Dim - 1; i >= 0; --i) {
-                    strides[i] = s;
-                    s *= shape[i];
-                }
+            for (int i = 0; i < Dim; ++i) {
+                assert(info.strides[i] % sizeof(T) == 0);
+                strides[i] = info.strides[i] / sizeof(T);
             }
-
-            // descr
-            if (iface.contains("descr")) {
-                // descr us not used.
-                // We just fully parse it and ensure that the total size EQUALS to sizeof(T) as is prescribed
-                // by the spec. I think (anstaf) it is an error in the spec. Total size should be LESS OR EQUAL
-                // to sizeof(T) because of alignment.
-                auto descr = parse_descr(iface["descr"].cast<pybind11::list>());
-                if (size(descr) != sizeof(T))
-                    throw std::domain_error(pybind11::str("invalid descr total size: {}").format(iface["descr"]));
-            }
-
-            // mask
-            if (version > 0 && iface.contains("mask") && !iface["mask"].is_none())
-                throw std::domain_error("__cuda_array_interface__.mask is not supported.");
 
             using sid::property;
             return sid::synthetic()
