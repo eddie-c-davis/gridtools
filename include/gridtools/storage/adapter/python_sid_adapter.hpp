@@ -20,7 +20,7 @@
 #include <type_traits>
 #include <utility>
 
-#ifdef USE_CUDA
+#ifdef __NVCC__
 #include <cuda.h>
 #include <cuda_runtime.h>
 #endif
@@ -261,20 +261,16 @@ namespace gridtools {
 
             // data
             T *ptr = reinterpret_cast<T *>(info.ptr);
-            T *device_ptr;
-#ifdef USE_CUDA
-            unsigned int mem_type;
+
+#ifdef __NVCC__
+            unsigned mem_type;
             auto ret = cuPointerGetAttribute(&mem_type, CU_POINTER_ATTRIBUTE_MEMORY_TYPE, (CUdeviceptr) ptr);
             if (ret != CUDA_SUCCESS) {
                 throw std::domain_error("CUDA error when getting pointer attribute: " + std::to_string(ret));
             }
-            if (mem_type == CU_MEMORYTYPE_UNIFIED || mem_type == CU_MEMORYTYPE_DEVICE) {  // GPUStorage
-                device_ptr = ptr;
-            } else if (mem_type == CU_MEMORYTYPE_HOST) {  // ExplicitlySyncGPUStorage
-                auto ptr = src.attr("data").attr("data").attr("ptr").cast<std::size_t>();
-                device_ptr = reinterpret_cast<T *>(ptr);
-            } else {
-                throw std::domain_error("Unknown CUDA memory type: "+ std::to_string(mem_type));
+            if (mem_type == CU_MEMORYTYPE_HOST) {  // managed_memory=False
+                auto device_ptr = src.attr("data").attr("data").attr("ptr").cast<std::size_t>();
+                ptr = reinterpret_cast<T *>(device_ptr);
             }
 #endif
 
