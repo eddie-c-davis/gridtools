@@ -270,7 +270,7 @@ namespace gridtools {
         }
 
         template <class T, size_t Dim, class Kind = void, size_t UnitStrideDim = size_t(-1)>
-        auto as_cuda_sid(pybind11::object const &src) {
+        auto as_cuda_sid(pybind11::buffer const &src) {
             static_assert(std::is_trivially_copyable<T>::value,
                 "as_cuda_sid should be instantiated with the trivially copyable type");
 
