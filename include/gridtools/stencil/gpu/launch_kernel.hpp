@@ -137,7 +137,8 @@ namespace gridtools {
                     int_t BlockSizeJ,
                     class Fun,
                     std::enable_if_t<!is_empty_ij_extents<Extent>(), int> = 0>
-                void launch_kernel(int_t i_size, int_t j_size, uint_t zblocks, Fun fun, size_t shared_memory_size = 0) {
+                void launch_kernel(int_t i_size, int_t j_size, uint_t zblocks, Fun fun, size_t shared_memory_size = 0,
+                                   cudaStream_t* stream = nullptr) {
                     static_assert(is_extent<Extent>::value, GT_INTERNAL_ERROR);
                     static_assert(Extent::iminus::value <= 0, GT_INTERNAL_ERROR);
                     static_assert(Extent::iplus::value >= 0, GT_INTERNAL_ERROR);
@@ -155,13 +156,24 @@ namespace gridtools {
                     dim3 blocks = {xblocks, yblocks, zblocks};
                     dim3 threads = {BlockSizeI, BlockSizeJ + halo_lines, 1};
 
-                    cuda_util::launch(blocks,
-                        threads,
-                        shared_memory_size,
-                        wrapper<num_threads, BlockSizeI, BlockSizeJ, Extent, Fun>,
-                        std::move(fun),
-                        i_size,
-                        j_size);
+                    if (stream) {
+                        cuda_util::launch(blocks,
+                            threads,
+                            shared_memory_size,
+                            *stream,
+                            wrapper<num_threads, BlockSizeI, BlockSizeJ, Extent, Fun>,
+                            std::move(fun),
+                            i_size,
+                            j_size);
+                    } else {
+                        cuda_util::launch(blocks,
+                            threads,
+                            shared_memory_size,
+                            wrapper<num_threads, BlockSizeI, BlockSizeJ, Extent, Fun>,
+                            std::move(fun),
+                            i_size,
+                            j_size);
+                    }
                 }
 
                 template <class Extent,
@@ -169,7 +181,8 @@ namespace gridtools {
                     int_t BlockSizeJ,
                     class Fun,
                     std::enable_if_t<is_empty_ij_extents<Extent>(), int> = 0>
-                void launch_kernel(int_t i_size, int_t j_size, uint_t zblocks, Fun fun, size_t shared_memory_size = 0) {
+                void launch_kernel(int_t i_size, int_t j_size, uint_t zblocks, Fun fun, size_t shared_memory_size = 0,
+                                   cudaStream_t* stream = nullptr) {
 
                     static_assert(std::is_trivially_copyable<Fun>::value, GT_INTERNAL_ERROR);
 
@@ -181,13 +194,24 @@ namespace gridtools {
                     dim3 blocks = {xblocks, yblocks, zblocks};
                     dim3 threads = {BlockSizeI, BlockSizeJ, 1};
 
-                    cuda_util::launch(blocks,
-                        threads,
-                        shared_memory_size,
-                        zero_extent_wrapper<num_threads, BlockSizeI, BlockSizeJ, Fun>,
-                        std::move(fun),
-                        i_size,
-                        j_size);
+                    if (stream) {
+                        cuda_util::launch(blocks,
+                            threads,
+                            shared_memory_size,
+                            *stream,
+                            zero_extent_wrapper<num_threads, BlockSizeI, BlockSizeJ, Fun>,
+                            std::move(fun),
+                            i_size,
+                            j_size);
+                    } else {
+                        cuda_util::launch(blocks,
+                            threads,
+                            shared_memory_size,
+                            zero_extent_wrapper<num_threads, BlockSizeI, BlockSizeJ, Fun>,
+                            std::move(fun),
+                            i_size,
+                            j_size);
+                    }
                 }
             } // namespace launch_kernel_impl_
 
