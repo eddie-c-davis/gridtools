@@ -159,8 +159,34 @@ namespace gridtools {
         template <class T>
         using get_from_keys_values =
             decltype(::gridtools::hymap_impl_::get_from_keys_values_fun(std::declval<T const &>()));
+
+        template <class Key, class Map>
+        using element_at = tuple_util::element<meta::st_position<get_keys<Map>, Key>::value, Map>;
+
+        template <class T, class Keys = get_keys<T>>
+        struct keys_are_legit_sfinae
+            : std::bool_constant<meta::is_set<Keys>::value && meta::length<Keys>::value == tuple_util::size<T>::value> {
+        };
+
+        template <class, class = void>
+        struct keys_are_legit : std::false_type {};
+
+        template <class T>
+        struct keys_are_legit<T, std::enable_if_t<keys_are_legit_sfinae<T>::value>> : std::true_type {};
+        
     } // namespace hymap_impl_
 
+    template <class T>
+    using is_hymap = std::bool_constant<is_tuple_like<T>::value && hymap_impl_::keys_are_legit<T>::value>;
+
+#ifdef __cpp_concepts
+    namespace concepts {
+        template <class T>
+        concept hymap = is_hymap<T>::value;
+    }
+#endif
+
+    using hymap_impl_::element_at;
     using hymap_impl_::get_from_keys_values;
     using hymap_impl_::get_keys;
 
@@ -191,7 +217,8 @@ namespace gridtools {
 
         template <class MetaMap,
             template <class...> class KeyCtor = keys,
-            class KeysAndValues = meta::transpose<MetaMap>>
+            class KeysAndValues =
+                meta::if_<meta::is_empty<MetaMap>, meta::list<meta::list<>, meta::list<>>, meta::transpose<MetaMap>>>
         using from_meta_map = from_keys_values<meta::first<KeysAndValues>, meta::second<KeysAndValues>, KeyCtor>;
 
         namespace hymap_impl_ {

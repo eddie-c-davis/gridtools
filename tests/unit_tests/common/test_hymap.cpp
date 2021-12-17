@@ -25,6 +25,11 @@ namespace gridtools {
         struct b;
         struct c;
 
+        static_assert(!is_hymap<void>::value, "");
+        static_assert(is_hymap<std::array<int, 3>>::value, "");
+        static_assert(is_hymap<tuple<int, double>>::value, "");
+        static_assert(is_hymap<hymap::keys<a, b>::values<int, double>>::value, "");
+
         TEST(tuple_like, smoke) {
             using testee_t = hymap::keys<a, b, c>::values<int, double, void *>;
 
@@ -113,6 +118,13 @@ namespace gridtools {
                 std::is_same<typename std::decay<decltype(at_key<a>(std::declval<dst_t>()))>::type, int>(), "");
             static_assert(
                 std::is_same<typename std::decay<decltype(at_key<b>(std::declval<dst_t>()))>::type, double>(), "");
+        }
+
+        TEST(from_meta_map, empty) {
+            using src_t = meta::list<>;
+            using dst_t = hymap::from_meta_map<src_t>;
+
+            static_assert(tuple_util::size<dst_t>() == 0);
         }
 
         struct add_3_f {
